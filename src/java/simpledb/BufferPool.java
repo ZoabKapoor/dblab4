@@ -3,6 +3,7 @@ package simpledb;
 import java.io.*;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
@@ -286,15 +287,14 @@ public class BufferPool {
 	private class LockManager {
 
 		final int LOCK_WAIT = 10;       // ms
-
+		final ConcurrentHashMap<Lock, HashSet<TransactionId>> lockTable;
 
 		/**
 		 * Sets up the lock manager to keep track of page-level locks for transactions
 		 * Should initialize state required for the lock table data structure(s)
 		 */
 		private LockManager() {
-			// some code here
-
+			lockTable = new ConcurrentHashMap<Lock, HashSet<TransactionId>>();
 		}
 
 
@@ -348,8 +348,14 @@ public class BufferPool {
 
 		/** Return true if the specified transaction has a lock on the specified page */
 		public synchronized boolean holdsLock(TransactionId tid, PageId p) {
-			// some code here
-
+			HashSet<TransactionId> xLocks = lockTable.get(new Lock(p, Permissions.READ_WRITE));
+			if (xLocks.contains(tid)) {
+				return true;
+			}
+			HashSet<TransactionId> sLocks = lockTable.get(new Lock(p, Permissions.READ_ONLY));
+			if (sLocks.contains(tid)) {
+				return true;
+			}
 			return false;
 		}
 
@@ -387,8 +393,21 @@ public class BufferPool {
 		 * If you decide to change the fact that a thread is sleeping in acquireLock(), you would have to wake it up here
 		 */
 		public synchronized void releaseLock(TransactionId tid, PageId pid) {
-			// some code here
-
+			Lock readOnly = new Lock(pid, Permissions.READ_ONLY);
+			HashSet<TransactionId> sTransactions = lockTable.get(readOnly);
+			if (sTransactions != null) {
+				if (sTransactions.contains(tid)) {
+					sTransactions.remove(tid);
+					lockTable.put(readOnly, sTransactions);
+				}
+			}
+			Lock readWrite = new Lock(pid, Permissions.READ_WRITE);
+			HashSet<TransactionId> xTransactions = lockTable.get(readWrite);
+			if (xTransactions != null) {
+				if (xTransactions.contains(tid)) {
+					lockTable.remove(readWrite);
+				}
+			}
 		}
 
 
@@ -403,10 +422,37 @@ public class BufferPool {
 			if(locked(tid, pid, perm)) 
 				return false; // this transaction cannot get the lock on this page; it is "locked out"
 
-			// some code here
+			Lock toAcquire = new Lock(pid, perm);
+			if (lockTable.contains(toAcquire)) {
+				HashSet<TransactionId> transactions = lockTable.get(toAcquire);
+				transactions.add(tid);
+				lockTable.put(toAcquire, transactions);
+			} else {
+				HashSet<TransactionId> transactions = new HashSet<TransactionId>();
+				transactions.add(tid);
+				lockTable.put(toAcquire, transactions);
+			}
 
 			return true;
 		}
-	}	
+	}
+	
+	private class Lock {
+		final PageId pageLocked;
+		final Permissions level;
+		
+		public Lock(PageId pageId, Permissions perm) {
+			this.pageLocked = pageId;
+			this.level = perm;
+		}
+		
+		public Permissions getLevel() {
+			return this.level;
+		}
+		
+		public PageId getPageId() {
+			return this.pageLocked;
+		}
+	}
 
 }
