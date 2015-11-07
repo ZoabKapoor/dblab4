@@ -344,19 +344,27 @@ public class BufferPool {
 
 		}
 
-
-
-		/** Return true if the specified transaction has a lock on the specified page */
-		public synchronized boolean holdsLock(TransactionId tid, PageId p) {
-			HashSet<TransactionId> xLocks = lockTable.get(new Lock(p, Permissions.READ_WRITE));
-			if (xLocks.contains(tid)) {
-				return true;
-			}
+		/** Return true if the specified transaction has a read lock on the specified page */
+		private synchronized boolean holdsReadLock(TransactionId tid, PageId p) {
 			HashSet<TransactionId> sLocks = lockTable.get(new Lock(p, Permissions.READ_ONLY));
 			if (sLocks.contains(tid)) {
 				return true;
 			}
 			return false;
+		}
+		
+		/** Return true if the specified transaction has a write lock on the specified page */
+		private synchronized boolean holdsWriteLock(TransactionId tid, PageId p) {
+			HashSet<TransactionId> xLocks = lockTable.get(new Lock(p, Permissions.READ_WRITE));
+			if (xLocks.contains(tid)) {
+				return true;
+			}
+			return false;
+		}
+		
+		/** Return true if the specified transaction has a lock on the specified page */
+		public synchronized boolean holdsLock(TransactionId tid, PageId p) {
+			return (holdsReadLock(tid, p) || holdsWriteLock(tid, p));
 		}
 
 		/**
@@ -379,9 +387,39 @@ public class BufferPool {
 		 *   if another tid is holding any sort of lock on pid, then the tid can not currenty acquire the lock (return true).
 		 */
 		private synchronized boolean locked(TransactionId tid, PageId pid, Permissions perm) {
-			// some code here
-
-			return true;
+			if (perm.equals(Permissions.READ_ONLY)) {
+				// The only way to fail to acquire a READ_ONLY lock is if someone else 
+				// holds a READ_WRITE lock on the same page. 
+				Lock xLock = new Lock(pid, Permissions.READ_WRITE);
+				if (lockTable.containsKey(xLock)) {
+					for (TransactionId id : lockTable.get(xLock)) {
+						if (!id.equals(tid)) {
+							return true;
+						}
+					}
+				}
+				return false;
+			} else {
+				HashSet<TransactionId> readers = lockTable.get(new Lock(pid, Permissions.READ_ONLY));
+				HashSet<TransactionId> writers = lockTable.get(new Lock(pid, Permissions.READ_WRITE));
+				// if another tid holds a read lock on the page, then you can't get a write lock
+				if (readers != null) {
+					for (TransactionId id : readers) {
+						if (!id.equals(tid)) {
+							return true;
+						}
+					}
+				}
+				// if another transaction holds a write lock on the page, you also can't get a write lock
+				if (writers != null) {
+					for (TransactionId id : writers) {
+						if (!id.equals(tid)) {
+							return true;
+						}
+					}
+				}
+				return false;
+			}
 		}
 
 		/*
@@ -418,7 +456,6 @@ public class BufferPool {
 		 * Returns true if the attempt was successful
 		 */
 		private synchronized boolean lock(TransactionId tid, PageId pid, Permissions perm) {
-
 			if(locked(tid, pid, perm)) 
 				return false; // this transaction cannot get the lock on this page; it is "locked out"
 
@@ -444,14 +481,6 @@ public class BufferPool {
 		public Lock(PageId pageId, Permissions perm) {
 			this.pageLocked = pageId;
 			this.level = perm;
-		}
-		
-		public Permissions getLevel() {
-			return this.level;
-		}
-		
-		public PageId getPageId() {
-			return this.pageLocked;
 		}
 	}
 
