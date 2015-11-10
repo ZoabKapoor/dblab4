@@ -460,7 +460,7 @@ public class BufferPool {
 				return false; // this transaction cannot get the lock on this page; it is "locked out"
 
 			Lock toAcquire = new Lock(pid, perm);
-			if (lockTable.contains(toAcquire)) {
+			if (lockTable.containsKey(toAcquire)) {
 				HashSet<TransactionId> transactions = lockTable.get(toAcquire);
 				transactions.add(tid);
 				lockTable.put(toAcquire, transactions);
@@ -481,6 +481,21 @@ public class BufferPool {
 		public Lock(PageId pageId, Permissions perm) {
 			this.pageLocked = pageId;
 			this.level = perm;
+		}
+		
+		public boolean equals(Object other) {
+			if (!(other instanceof Lock)) {
+				return false;
+			}
+			Lock toCompare = (Lock) other;
+			if (this.level.equals(toCompare.level) && this.pageLocked.equals(toCompare.pageLocked)) {
+				return true;
+			}
+			return false;
+		}
+		
+		public int hashCode() {
+			return this.pageLocked.hashCode() + this.level.hashCode();
 		}
 	}
 
