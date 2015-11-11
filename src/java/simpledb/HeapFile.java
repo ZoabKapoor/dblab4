@@ -71,6 +71,8 @@ public class HeapFile implements DbFile {
 		}
         byte[] bytes = new byte[BufferPool.PAGE_SIZE];
         try {
+        	// TODO: surround seek/readfully with synchronized(this)?
+        	// No, because every thread has its own instance of fileToRead
         	fileToRead.seek((long) pid.pageNumber()*BufferPool.PAGE_SIZE); 
 			fileToRead.readFully(bytes, 0, BufferPool.PAGE_SIZE);
 		} catch (IOException e) {
@@ -97,8 +99,10 @@ public class HeapFile implements DbFile {
 		} catch (FileNotFoundException e) {
 			throw new RuntimeException("Couldn't find the file: " + file.toString());
 		}
-        fileToWrite.seek((long) page.getId().pageNumber()*BufferPool.PAGE_SIZE); 
-		fileToWrite.write(page.getPageData(), 0, BufferPool.PAGE_SIZE);
+        fileToWrite.seek((long) page.getId().pageNumber()*BufferPool.PAGE_SIZE);
+        synchronized(this) {
+        	fileToWrite.write(page.getPageData(), 0, BufferPool.PAGE_SIZE);
+        }
 		fileToWrite.close();
 		
     }
@@ -121,12 +125,16 @@ public class HeapFile implements DbFile {
     			candidate.insertTuple(t);
     			result.add(candidate);
     			return result;
+    		} else {
+    			Database.getBufferPool().releasePage(tid, pid);
     		}
     	}
+    	synchronized (this) {
     	HeapPage newPage = new HeapPage(new HeapPageId(getId(), numPages()), new byte[BufferPool.PAGE_SIZE]);
     	newPage.insertTuple(t);
     	writePage(newPage);
     	result.add(newPage);
+    	}
     	return result;
     }
 

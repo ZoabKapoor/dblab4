@@ -270,7 +270,11 @@ public class BufferPool {
 				}
 
 			}
-			flushPage(pid); // flush whichever one we ended up with, which may have been a dirty one
+			if (pages.get(pid).isDirty() == null) {
+				flushPage(pid); // flush the page we ended up with if it was not dirty
+			} else {
+				throw new DbException("could not evict page; all pages are dirty!");
+			}
 		} catch (IOException e) {
 			throw new DbException("could not evict page");
 		}
@@ -495,7 +499,7 @@ public class BufferPool {
 		}
 		
 		public int hashCode() {
-			return this.pageLocked.hashCode() + this.level.hashCode();
+			return (this.pageLocked.toString() + this.level.toString()).hashCode();
 		}
 	}
 
