@@ -222,8 +222,7 @@ public class BufferPool {
         cache.
 	 */
 	public synchronized void discardPage(PageId pid) {
-		// some code goes here
-		// not necessary for labs 1--4
+		pages.remove(pid);
 	}
 
 	/**
@@ -235,7 +234,9 @@ public class BufferPool {
 		Page p = pages.get(pid);
 		if (p == null)
 			return; //not in buffer pool -- doesn't need to be flushed
-
+		if (p.isDirty() == null) {
+			return; // page isn't dirty -- doesn't need to be flushed
+		}
 		DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
 		file.writePage(p);
 		p.markDirty(false, null);
@@ -344,26 +345,36 @@ public class BufferPool {
 		 * Check lab description to make sure you clean up appropriately depending on whether transaction commits or aborts
 		 */
 		public synchronized void releaseAllLocks(TransactionId tid, boolean commit) {
-			// some code here
-
+			HashSet<Lock> locksHeld = new HashSet<Lock>();
+			for (Lock lock : lockTable.keySet()) {
+				if (holdsLock(tid,lock.pageLocked)) {
+					locksHeld.add(lock);
+				}
+			}
+			for (Lock lock : locksHeld) {
+				if (commit) {
+					try {
+						flushPage(lock.pageLocked);
+					} catch (IOException e) {
+						throw new RuntimeException("Couldn't flush page with id: " + lock.pageLocked);
+					}
+				} else {
+					discardPage(lock.pageLocked);
+				}
+				releaseLock(tid, lock.pageLocked);
+			}
 		}
 
 		/** Return true if the specified transaction has a read lock on the specified page */
 		private synchronized boolean holdsReadLock(TransactionId tid, PageId p) {
 			HashSet<TransactionId> sLocks = lockTable.get(new Lock(p, Permissions.READ_ONLY));
-			if (sLocks.contains(tid)) {
-				return true;
-			}
-			return false;
+			return (sLocks == null) ? false : sLocks.contains(tid);
 		}
 		
 		/** Return true if the specified transaction has a write lock on the specified page */
 		private synchronized boolean holdsWriteLock(TransactionId tid, PageId p) {
 			HashSet<TransactionId> xLocks = lockTable.get(new Lock(p, Permissions.READ_WRITE));
-			if (xLocks.contains(tid)) {
-				return true;
-			}
-			return false;
+			return (xLocks == null) ? false : xLocks.contains(tid);
 		}
 		
 		/** Return true if the specified transaction has a lock on the specified page */
