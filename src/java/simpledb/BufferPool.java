@@ -7,8 +7,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.Set;
-import java.util.Vector;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -34,8 +32,6 @@ public class BufferPool {
 	final ConcurrentHashMap<PageId,Page> pages; // hash table storing current pages in memory
 	private final Random random = new Random(); // for choosing random pages for eviction
 
-	/** TODO for Lab 4: create your private Lock Manager class. 
-	Be sure to instantiate it in the constructor. */
 	private final LockManager lockmgr; // Added for Lab 4
 
 	/**
@@ -340,7 +336,6 @@ public class BufferPool {
 
 			synchronized(this) {
 				tid.timesAsked = 0;
-				// for Exercise 5, might need some cleanup on deadlock detection data structure
 			}
 
 			return true;
@@ -409,6 +404,17 @@ public class BufferPool {
 		 *   if another tid is holding any sort of lock on pid, then the tid can not currenty acquire the lock (return true).
 		 */
 		private synchronized boolean locked(TransactionId tid, PageId pid, Permissions perm) {
+			HashSet<TransactionId> blockers = blockedBy(tid,pid,perm);
+			return !(blockers.isEmpty());
+		}
+		
+		/**
+		 * Helper function to do the work behind locked(). Returns a set of blocking TransactionIds
+		 * - initially, for use in cycle detection in a waits for graph. Works fine even
+		 * though I switched to timeout-based, so no harm keeping it around.
+		 */ 
+		private synchronized HashSet<TransactionId> blockedBy(TransactionId tid, PageId pid, Permissions perm) {
+			HashSet<TransactionId> blockers = new HashSet<TransactionId>();
 			if (perm.equals(Permissions.READ_ONLY)) {
 				// The only way to fail to acquire a READ_ONLY lock is if someone else 
 				// holds a READ_WRITE lock on the same page. 
@@ -416,11 +422,11 @@ public class BufferPool {
 				if (lockTable.containsKey(xLock)) {
 					for (TransactionId id : lockTable.get(xLock)) {
 						if (!id.equals(tid)) {
-							return true;
+							blockers.add(id);
 						}
 					}
 				}
-				return false;
+				return blockers;
 			} else {
 				HashSet<TransactionId> readers = lockTable.get(new Lock(pid, Permissions.READ_ONLY));
 				HashSet<TransactionId> writers = lockTable.get(new Lock(pid, Permissions.READ_WRITE));
@@ -428,7 +434,7 @@ public class BufferPool {
 				if (readers != null) {
 					for (TransactionId id : readers) {
 						if (!id.equals(tid)) {
-							return true;
+							blockers.add(id);
 						}
 					}
 				}
@@ -436,11 +442,11 @@ public class BufferPool {
 				if (writers != null) {
 					for (TransactionId id : writers) {
 						if (!id.equals(tid)) {
-							return true;
+							blockers.add(id);
 						}
 					}
 				}
-				return false;
+				return blockers;
 			}
 		}
 
