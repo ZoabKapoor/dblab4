@@ -7,8 +7,12 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.Set;
-import java.util.Vector;
+
+import org.javatuples.Pair;
+import org.jgrapht.*;
+import org.jgrapht.alg.CycleDetector;
+import org.jgrapht.graph.DefaultDirectedGraph;
+import org.jgrapht.graph.DefaultEdge;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -134,6 +138,7 @@ public class BufferPool {
 	public void transactionComplete(TransactionId tid, boolean commit)
 			throws IOException {
 		lockmgr.releaseAllLocks(tid, commit); // Added for Lab 4
+		lockmgr.waitsForGraph.removeVertex(tid);
 	}
 
 	/**
@@ -293,6 +298,8 @@ public class BufferPool {
 
 		final int LOCK_WAIT = 10;       // ms
 		final ConcurrentHashMap<Lock, HashSet<TransactionId>> lockTable;
+		final DirectedGraph<TransactionId, DefaultEdge> waitsForGraph;
+//		final CycleDetector<TransactionId, DefaultEdge> deadlockDetector;
 
 		/**
 		 * Sets up the lock manager to keep track of page-level locks for transactions
@@ -300,6 +307,8 @@ public class BufferPool {
 		 */
 		private LockManager() {
 			lockTable = new ConcurrentHashMap<Lock, HashSet<TransactionId>>();
+			waitsForGraph = new DefaultDirectedGraph<TransactionId, DefaultEdge>(DefaultEdge.class);
+//			deadlockDetector = new CycleDetector<TransactionId, DefaultEdge>(waitsForGraph);
 		}
 
 
@@ -320,7 +329,28 @@ public class BufferPool {
 			while(!lock(tid, pid, perm)) { // keep trying to get the lock
 
 				synchronized(this) {
-					// some code here for Exercise 5, deadlock detection
+					// better put this TransactionId in the waitsForGraph if it's not there
+					if (!waitsForGraph.containsVertex(tid)) {
+						waitsForGraph.addVertex(tid);
+					}
+					// Find which transactions are blocking this one, and create edges between
+					// this transaction and them.
+					HashSet <TransactionId> blockers = blockedBy(tid,pid,perm);
+					for (TransactionId id : blockers) {
+						if (!waitsForGraph.containsVertex(id)) {
+							waitsForGraph.addVertex(id);
+						}
+						if (!waitsForGraph.containsEdge(tid, id)) {
+							waitsForGraph.addEdge(tid, id);
+						}
+						// check whether the edge we just added created a cycle; if so, this transaction
+						// have to be aborted
+						System.out.println("Graph vertex set is: " + waitsForGraph.vertexSet());
+						System.out.println("Graph edge set is: " + waitsForGraph.edgeSet());
+						if (new CycleDetector<TransactionId, DefaultEdge>(waitsForGraph).detectCycles()) {
+							throw new DeadlockException();
+						}
+					}
 
 				}
 
@@ -333,6 +363,13 @@ public class BufferPool {
 
 
 			synchronized(this) {
+				// The transaction has acquired its lock, remove all outgoing edges from
+				// this TransactionId.
+				for (TransactionId id : waitsForGraph.vertexSet()) {
+					if (waitsForGraph.containsEdge(tid, id)) {
+						waitsForGraph.removeEdge(tid, id);
+					}
+				}
 				// for Exercise 5, might need some cleanup on deadlock detection data structure
 			}
 
@@ -402,6 +439,16 @@ public class BufferPool {
 		 *   if another tid is holding any sort of lock on pid, then the tid can not currenty acquire the lock (return true).
 		 */
 		private synchronized boolean locked(TransactionId tid, PageId pid, Permissions perm) {
+			HashSet<TransactionId> blockers = blockedBy(tid,pid,perm);
+			return !(blockers.isEmpty());
+		}
+		
+		/**
+		 * Helper function to do the work behind locked(). Returns a set of blocking TransactionIds
+		 * for use in cycle detection.
+		 */
+		private synchronized HashSet<TransactionId> blockedBy(TransactionId tid, PageId pid, Permissions perm) {
+			HashSet<TransactionId> blockers = new HashSet<TransactionId>();
 			if (perm.equals(Permissions.READ_ONLY)) {
 				// The only way to fail to acquire a READ_ONLY lock is if someone else 
 				// holds a READ_WRITE lock on the same page. 
@@ -409,11 +456,11 @@ public class BufferPool {
 				if (lockTable.containsKey(xLock)) {
 					for (TransactionId id : lockTable.get(xLock)) {
 						if (!id.equals(tid)) {
-							return true;
+							blockers.add(id);
 						}
 					}
 				}
-				return false;
+				return blockers;
 			} else {
 				HashSet<TransactionId> readers = lockTable.get(new Lock(pid, Permissions.READ_ONLY));
 				HashSet<TransactionId> writers = lockTable.get(new Lock(pid, Permissions.READ_WRITE));
@@ -421,7 +468,7 @@ public class BufferPool {
 				if (readers != null) {
 					for (TransactionId id : readers) {
 						if (!id.equals(tid)) {
-							return true;
+							blockers.add(id);
 						}
 					}
 				}
@@ -429,11 +476,11 @@ public class BufferPool {
 				if (writers != null) {
 					for (TransactionId id : writers) {
 						if (!id.equals(tid)) {
-							return true;
+							blockers.add(id);
 						}
 					}
 				}
-				return false;
+				return blockers;
 			}
 		}
 

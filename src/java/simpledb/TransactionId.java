@@ -22,7 +22,15 @@ public class TransactionId implements Serializable {
     }
 
     public boolean equals(Object tid) {
-        return ((TransactionId) tid).myid == myid;
+    	if (!(tid instanceof TransactionId)) {
+    		return false;
+    	} else {
+            return ((TransactionId) tid).myid == myid;
+    	}
+    }
+    
+    public String toString() {
+    	return String.valueOf(myid);
     }
 
     public int hashCode() {
