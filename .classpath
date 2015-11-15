@@ -7,8 +7,5 @@
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
 	<classpathentry kind="lib" path="lib/zql.jar"/>
 	<classpathentry kind="lib" path="lib/jline-0.9.94.jar"/>
-	<classpathentry kind="lib" path="/Users/Zoab/Documents/Junior Year/Junior Year Sem 1/DBs/Labs/cs133-lab4/lib/jgrapht-core-0.9.1.jar"/>
-	<classpathentry kind="lib" path="/Users/Zoab/Documents/Junior Year/Junior Year Sem 1/DBs/Labs/cs133-lab4/lib/javatuples-1.2.jar"/>
-	<classpathentry kind="lib" path="/Users/Zoab/Documents/Junior Year/Junior Year Sem 1/DBs/Labs/cs133-lab4/lib/jgraphx.jar"/>
 	<classpathentry kind="output" path="bin/src"/>
 </classpath>

@@ -8,12 +8,6 @@ import java.util.Iterator;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.javatuples.Pair;
-import org.jgrapht.*;
-import org.jgrapht.alg.CycleDetector;
-import org.jgrapht.graph.DefaultDirectedGraph;
-import org.jgrapht.graph.DefaultEdge;
-
 /**
  * BufferPool manages the reading and writing of pages into memory from
  * disk. Access methods call into it to retrieve pages, and it fetches
@@ -38,8 +32,6 @@ public class BufferPool {
 	final ConcurrentHashMap<PageId,Page> pages; // hash table storing current pages in memory
 	private final Random random = new Random(); // for choosing random pages for eviction
 
-	/** TODO for Lab 4: create your private Lock Manager class. 
-	Be sure to instantiate it in the constructor. */
 	private final LockManager lockmgr; // Added for Lab 4
 
 	/**
@@ -138,7 +130,6 @@ public class BufferPool {
 	public void transactionComplete(TransactionId tid, boolean commit)
 			throws IOException {
 		lockmgr.releaseAllLocks(tid, commit); // Added for Lab 4
-		lockmgr.waitsForGraph.removeVertex(tid);
 	}
 
 	/**
@@ -297,9 +288,9 @@ public class BufferPool {
 	private class LockManager {
 
 		final int LOCK_WAIT = 10;       // ms
+		// The number of times we allow a transaction to fail to get a lock before aborting it 
+		final int NUM_CONSEC_FAILURES = 10;
 		final ConcurrentHashMap<Lock, HashSet<TransactionId>> lockTable;
-		final DirectedGraph<TransactionId, DefaultEdge> waitsForGraph;
-//		final CycleDetector<TransactionId, DefaultEdge> deadlockDetector;
 
 		/**
 		 * Sets up the lock manager to keep track of page-level locks for transactions
@@ -307,8 +298,6 @@ public class BufferPool {
 		 */
 		private LockManager() {
 			lockTable = new ConcurrentHashMap<Lock, HashSet<TransactionId>>();
-			waitsForGraph = new DefaultDirectedGraph<TransactionId, DefaultEdge>(DefaultEdge.class);
-//			deadlockDetector = new CycleDetector<TransactionId, DefaultEdge>(waitsForGraph);
 		}
 
 
@@ -329,27 +318,10 @@ public class BufferPool {
 			while(!lock(tid, pid, perm)) { // keep trying to get the lock
 
 				synchronized(this) {
-					// better put this TransactionId in the waitsForGraph if it's not there
-					if (!waitsForGraph.containsVertex(tid)) {
-						waitsForGraph.addVertex(tid);
-					}
-					// Find which transactions are blocking this one, and create edges between
-					// this transaction and them.
-					HashSet <TransactionId> blockers = blockedBy(tid,pid,perm);
-					for (TransactionId id : blockers) {
-						if (!waitsForGraph.containsVertex(id)) {
-							waitsForGraph.addVertex(id);
-						}
-						if (!waitsForGraph.containsEdge(tid, id)) {
-							waitsForGraph.addEdge(tid, id);
-						}
-						// check whether the edge we just added created a cycle; if so, this transaction
-						// have to be aborted
-						System.out.println("Graph vertex set is: " + waitsForGraph.vertexSet());
-						System.out.println("Graph edge set is: " + waitsForGraph.edgeSet());
-						if (new CycleDetector<TransactionId, DefaultEdge>(waitsForGraph).detectCycles()) {
-							throw new DeadlockException();
-						}
+					tid.timesAsked++;
+					// If tid has tried to acquire a lock too many times, abort
+					if (tid.timesAsked > NUM_CONSEC_FAILURES) {
+						throw new DeadlockException();
 					}
 
 				}
@@ -363,14 +335,7 @@ public class BufferPool {
 
 
 			synchronized(this) {
-				// The transaction has acquired its lock, remove all outgoing edges from
-				// this TransactionId.
-				for (TransactionId id : waitsForGraph.vertexSet()) {
-					if (waitsForGraph.containsEdge(tid, id)) {
-						waitsForGraph.removeEdge(tid, id);
-					}
-				}
-				// for Exercise 5, might need some cleanup on deadlock detection data structure
+				tid.timesAsked = 0;
 			}
 
 			return true;
@@ -445,8 +410,9 @@ public class BufferPool {
 		
 		/**
 		 * Helper function to do the work behind locked(). Returns a set of blocking TransactionIds
-		 * for use in cycle detection.
-		 */
+		 * - initially, for use in cycle detection in a waits for graph. Works fine even
+		 * though I switched to timeout-based, so no harm keeping it around.
+		 */ 
 		private synchronized HashSet<TransactionId> blockedBy(TransactionId tid, PageId pid, Permissions perm) {
 			HashSet<TransactionId> blockers = new HashSet<TransactionId>();
 			if (perm.equals(Permissions.READ_ONLY)) {
