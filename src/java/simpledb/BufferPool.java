@@ -320,7 +320,11 @@ public class BufferPool {
 			while(!lock(tid, pid, perm)) { // keep trying to get the lock
 
 				synchronized(this) {
-					// some code here for Exercise 5, deadlock detection
+					tid.timesAsked++;
+					// If tid has tried to acquire a lock too many times, abort
+					if (tid.timesAsked > 10) {
+						throw new DeadlockException();
+					}
 
 				}
 
@@ -333,6 +337,7 @@ public class BufferPool {
 
 
 			synchronized(this) {
+				tid.timesAsked = 0;
 				// for Exercise 5, might need some cleanup on deadlock detection data structure
 			}
 
