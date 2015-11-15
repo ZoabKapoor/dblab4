@@ -292,6 +292,8 @@ public class BufferPool {
 	private class LockManager {
 
 		final int LOCK_WAIT = 10;       // ms
+		// The number of times we allow a transaction to fail to get a lock before aborting it 
+		final int NUM_CONSEC_FAILURES = 10;
 		final ConcurrentHashMap<Lock, HashSet<TransactionId>> lockTable;
 
 		/**
@@ -322,7 +324,7 @@ public class BufferPool {
 				synchronized(this) {
 					tid.timesAsked++;
 					// If tid has tried to acquire a lock too many times, abort
-					if (tid.timesAsked > 10) {
+					if (tid.timesAsked > NUM_CONSEC_FAILURES) {
 						throw new DeadlockException();
 					}
 
