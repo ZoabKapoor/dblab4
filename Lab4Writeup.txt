@@ -1,0 +1,23 @@
+Code completeness and time spent:
+
+All told, I probably spent between 12 and 15 hours on this lab. My code is complete and passes all tests!
+
+Issues I ran into:
+
+I initially tried to implement a waits-for graph as my deadlock resolution strategy, but the implementation was failing tests and I couldn't figure out why, so I opted to switch to a simpler timeout strategy. 
+
+I also had trouble passing LockingTest initially (my code was granting locks it shouldn't have), which I later learned was because I hadn't implemented the Lock class' hashCode() and equals() functions (apparently the Java defaults weren't sensible enough). 
+
+API changes and design decisions:
+
+I initially chose a waits-for graph for deadlock resolution, but because of difficulties with the implementation and time constraints I switched to a timeout-like strategy. Instead of using the time that a process is running as an indicator for when to abort it, I kept track of the number of times it had consecutively requested and failed to obtain a lock, and if that number got too high I aborted the transaction. Acquiring a lock reset the count of consecutive lock misses. To implement this, I changed the TransactionId class, adding a data member to keep track of the number of consecutive times it's failed to recieve a lock. Using this deadlock resolution strategy, all tests passed (the TransactionTest system test would take at most 4 minutes).
+
+I decided to create a Lock class to represent a lock (it was just dumb data that paired the lock's page id with its permission level), and the internal data structure I used in the Lock Manager was a HashMap that mapped Locks to a set of TransactionIds that held the locks. As a consequence, finding all transactions holding a particular lock was quick but finding all locks held by a particular transaction was very slow. While this lock management is good enough for a small database, if I wanted to make SimpleDB more scalable I would have used 2 HashMaps - one from Locks to the set of transactions holding the locks, and one from TransactionIds to the set of locks held by those transactions. However, I didn't want to have to manage preserving the integrity of these two maps for this lab, so I just implemented the one. 
+
+I implemented the discardPage() method (which was called by releaseAllLocks()), even though it apparently wasn't necessary for labs 1-4 (though I feel like that isn't the case; you have to be able to discard a page if you're aborting a transaction!).
+
+I changed flushPage() from the provided code so that it never flushes a dirty page, instead throwing a DbException. 
+
+When implementing a waits-for graph, I found it necessary to keep track of the ids of transactions blocking you from getting a particular lock (instead of just knowing whether or not you're locked out), so I made locked() call a helper function that returns a set of TransactionIds that you're blocked by. When I switched to a timeout strategy, I no longer needed to call this helper function directly, but it didn't hurt to have it around so I left it as is.
+
+In HeapFile.insertTuple(), I added some code to release the Page held if all you were doing was searching it for an empty slot to insert the tuple into. I also made sure the writing of a new page into the file backing the database was synchronized so you couldn't have multiple threads overwriting each other when they added new pages to the database. 
