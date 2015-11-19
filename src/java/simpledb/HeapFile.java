@@ -71,8 +71,6 @@ public class HeapFile implements DbFile {
 		}
         byte[] bytes = new byte[BufferPool.PAGE_SIZE];
         try {
-        	// TODO: surround seek/readfully with synchronized(this)?
-        	// No, because every thread has its own instance of fileToRead
         	fileToRead.seek((long) pid.pageNumber()*BufferPool.PAGE_SIZE); 
 			fileToRead.readFully(bytes, 0, BufferPool.PAGE_SIZE);
 		} catch (IOException e) {
